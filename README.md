@@ -6,6 +6,44 @@ answered **only** from the uploaded documents. The language model runs locally t
 [Ollama](https://ollama.com), so no data leaves your machine and no paid API key is
 required.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph Client
+        UI["Web UI<br/>(browser)"]
+    end
+
+    subgraph Backend["FastAPI backend (app.py)"]
+        UP["POST /upload"]
+        ASK["POST /ask"]
+        DB_EP["GET /db · POST /reset"]
+        EMB["SentenceTransformer<br/>all-MiniLM-L6-v2"]
+        PDF["pypdf<br/>text extraction"]
+    end
+
+    subgraph Stores["Local services"]
+        CHROMA[("ChromaDB<br/>vector store")]
+        OLLAMA["Ollama<br/>llama3.2"]
+    end
+
+    UI -->|"upload PDF"| UP
+    UI -->|"question"| ASK
+    UI -->|"inspect / clear"| DB_EP
+
+    UP --> PDF --> EMB
+    EMB -->|"chunk vectors"| CHROMA
+
+    ASK -->|"embed question"| EMB
+    EMB -->|"query vector"| CHROMA
+    CHROMA -->|"top-k chunks"| ASK
+    ASK -->|"context + question"| OLLAMA
+    OLLAMA -->|"answer"| ASK
+    ASK -->|"answer + context"| UI
+
+    DB_EP <--> CHROMA
+```
+
 ## How it works
 
 The RAG flow has three phases:
@@ -17,10 +55,44 @@ The RAG flow has three phases:
 3. **Generation** — the retrieved chunks are passed as context to an LLM (`llama3.2` via
    Ollama), which generates an answer grounded in that context.
 
+**Ingestion flow** (`POST /upload`):
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant API as FastAPI
+    participant P as pypdf
+    participant E as Embedder
+    participant C as ChromaDB
+
+    U->>API: upload PDF
+    API->>P: extract text
+    P-->>API: raw text
+    API->>API: split into chunks
+    API->>E: encode chunks
+    E-->>API: vectors
+    API->>C: store vectors + text + source
+    API-->>U: {uploaded, chunks}
 ```
-PDF ──► chunking ──► embedding ──► ChromaDB
-                                      │
-question ──► embedding ──► top-k search ──► context ──► LLM ──► answer
+
+**Query flow** (`POST /ask`):
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant API as FastAPI
+    participant E as Embedder
+    participant C as ChromaDB
+    participant L as Ollama (llama3.2)
+
+    U->>API: question
+    API->>E: encode question
+    E-->>API: query vector
+    API->>C: top-k similarity search
+    C-->>API: relevant chunks
+    API->>L: prompt (context + question)
+    L-->>API: grounded answer
+    API-->>U: {answer, context}
 ```
 
 ## Requirements
