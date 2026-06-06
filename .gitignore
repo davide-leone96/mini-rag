@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Vector store (regenerated at runtime, holds uploaded data)
+chroma_db/
+
+# Generated output
+*.png
+
+# Editor / tooling
+.DS_Store
+.vscode/
+.idea/
